@@ -1,0 +1,10 @@
+# Virtual Environment (This stops the 8000+ file tracking)
+.venv/
+venv/
+ENV/
+
+# Python Cache Files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
