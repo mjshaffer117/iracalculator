@@ -1,5 +1,5 @@
 import sqlite3
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 DB_PATH = "iracalculator.db"
 

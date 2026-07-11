@@ -1,6 +1,6 @@
 import logging
+
 import requests
-import yfinance as yf
 
 ACCURACY_WARNING = (
     "WARNING: Market data is open-source (yfinance) and not guaranteed. "
@@ -17,6 +17,12 @@ logger = logging.getLogger(__name__)
 def is_market_active() -> str:
     """Return 'OPEN', 'CLOSED', or 'ERROR' indicating US market status."""
     try:
+        import yfinance as yf
+    except ImportError:
+        logger.exception("yfinance is not installed; unable to determine market status")
+        return "ERROR"
+
+    try:
         US = yf.Market("US")
         market_info = US.status
         market_state = market_info.get("marketState", "UNKNOWN")
@@ -24,7 +30,7 @@ def is_market_active() -> str:
             return "OPEN"
         else:
             return "CLOSED"
-    except Exception as e:
+    except Exception:
         logger.exception("Unable to determine market status")
         return "ERROR"
 
@@ -34,6 +40,11 @@ def get_ticker_price(ticker: str) -> float:
 
     Raises ValueError when the ticker is not found or data cannot be fetched.
     """
+    try:
+        import yfinance as yf
+    except ImportError as exc:
+        raise ValueError("yfinance is not installed. Install it to use the price command.") from exc
+
     ticker = ticker.strip().upper()
     ticker_obj = yf.Ticker(ticker)
     try:

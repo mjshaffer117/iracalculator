@@ -1,6 +1,9 @@
-import sys
-import logging
 import argparse
+import logging
+import shlex
+import sys
+from typing import Optional, Sequence
+
 from services import data
 from services import db
 from services import view
@@ -23,10 +26,10 @@ def configure_logging(verbose: bool = False) -> None:
         root.addHandler(console)
 
 
-def main_cli() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="IRA calculator CLI")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
-    subparsers = parser.add_subparsers(dest="cmd", required=True)
+    subparsers = parser.add_subparsers(dest="cmd")
 
     p_add = subparsers.add_parser("add", help="add (ticker) ---> Add a ticker to the database")
     p_add.add_argument("ticker", help="Ticker symbol (e.g. AAPL)")
@@ -38,7 +41,7 @@ def main_cli() -> None:
     p_set_cash = subparsers.add_parser("set-cash", help="set-cash (amount) ---> Set total buying power (cash)")
     p_set_cash.add_argument("amount", type=float, help="Amount of cash available")
 
-    p_list = subparsers.add_parser("list", help="list ---> List tickers and allocations")
+    subparsers.add_parser("list", help="list ---> List tickers and allocations")
 
     p_compute = subparsers.add_parser("compute", help="compute [--cash AMOUNT] ---> Compute allocation amounts from cash")
     p_compute.add_argument("--cash", type=float, help="Override cash amount for this computation")
@@ -46,10 +49,13 @@ def main_cli() -> None:
     p_price = subparsers.add_parser("price", help="price (ticker) ---> Fetch current price for a ticker")
     p_price.add_argument("ticker", help="Ticker symbol")
 
-    p_view = subparsers.add_parser("view", help="view ---> Display all database contents")
+    subparsers.add_parser("view", help="view ---> Display all database contents")
 
-    args = parser.parse_args()
-    configure_logging(args.verbose)
+    return parser
+
+
+def execute_command(args: argparse.Namespace, exit_on_error: bool = True) -> None:
+    configure_logging(getattr(args, "verbose", False))
 
     # ensure DB exists
     db.init_db()
@@ -76,7 +82,9 @@ def main_cli() -> None:
         cash = args.cash if args.cash is not None else db.get_cash()
         if cash is None:
             print("Cash not set. Use `set-cash` or pass --cash.")
-            sys.exit(1)
+            if exit_on_error:
+                sys.exit(1)
+            return
         allocations = db.compute_allocations(cash=cash)
         print(f"Using cash = {cash}")
         for t, amt in allocations.items():
@@ -88,12 +96,65 @@ def main_cli() -> None:
             print(f"The current price for '{t}' is: {price}")
         except ValueError as e:
             print(f"Error: {e}")
-            sys.exit(1)
+            if exit_on_error:
+                sys.exit(1)
         except Exception:
             print("An unexpected error occurred. Check iracalculator.log for details.")
-            sys.exit(2)
+            if exit_on_error:
+                sys.exit(2)
     elif args.cmd == "view":
         view.display_all()
+
+
+def run_repl(parser: argparse.ArgumentParser) -> None:
+    print("IRA Calculator interactive mode. Type 'help' for commands or 'quit' to exit.")
+    db.init_db()
+
+    while True:
+        try:
+            raw_input = input("ira> ").strip()
+        except EOFError:
+            print()
+            break
+
+        if not raw_input:
+            continue
+
+        if raw_input.lower() in {"quit", "exit"}:
+            print("Goodbye!")
+            break
+
+        if raw_input.lower() in {"help", "?"}:
+            print("Commands: add <ticker>, set-allocation <ticker> <percent>, set-cash <amount>, list, compute [--cash AMOUNT], price <ticker>, view, help, quit")
+            continue
+
+        try:
+            argv = shlex.split(raw_input)
+        except ValueError as exc:
+            print(f"Error: {exc}")
+            continue
+
+        if not argv:
+            continue
+
+        try:
+            args = parser.parse_args(argv)
+        except SystemExit:
+            continue
+
+        execute_command(args, exit_on_error=False)
+
+
+def main_cli(argv: Optional[Sequence[str]] = None) -> None:
+    parser = build_parser()
+    argv_list = list(sys.argv[1:] if argv is None else argv)
+
+    if not argv_list:
+        run_repl(parser)
+        return
+
+    args = parser.parse_args(argv_list)
+    execute_command(args)
 
 
 if __name__ == "__main__":
